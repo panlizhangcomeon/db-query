@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# -----------------------------------------------------------------------------
+# Secrets & local configuration (do NOT commit real API keys, DB URLs, passwords)
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# Local Docker / compose overrides (often contain DB host & credentials)
+docker-compose.override.yml
+**/docker-compose.override.yml
+
+# Optional local credential files
+credentials.json
+secrets.yaml
+secrets.yml
+*.pem
+*.p12
+
+# Node (for frontend)
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Frontend build
+frontend/dist/
+frontend/build/
+
+# Test databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Local / AI tooling & internal specs (not for remote repo)
+.claude/
+CLAUDE.md
+.specify/
+specs/
