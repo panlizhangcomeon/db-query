@@ -86,6 +86,13 @@ export interface NaturalQueryRequest {
   naturalLanguage: string;
 }
 
+/** POST /query/natural/generate 响应 data */
+export interface NaturalGenerateResult {
+  generatedSql: string;
+  naturalLanguage: string;
+  tablesUsed?: string[];
+}
+
 export interface QueryResult {
   columns: string[];
   rows: Record<string, unknown>[];

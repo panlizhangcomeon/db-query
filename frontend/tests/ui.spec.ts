@@ -17,9 +17,8 @@ test.describe('AI Database Query Tool - UI Tests', () => {
     await expect(page.locator('.app-content')).toBeVisible();
   });
 
-  test('should display database selector', async ({ page }) => {
-    // Check database selector section
-    await expect(page.getByText('选择数据库', { exact: true })).toBeVisible();
+  test('should display connection selector', async ({ page }) => {
+    await expect(page.getByText('选择连接', { exact: true })).toBeVisible();
   });
 
   test('should display SQL query card', async ({ page }) => {
@@ -43,17 +42,22 @@ test.describe('AI Database Query Tool - UI Tests', () => {
   test('should display query results placeholder', async ({ page }) => {
     // Check query results placeholder
     await expect(page.getByText('查询结果', { exact: true })).toBeVisible();
-    await expect(page.getByText('执行 SQL 查询后，结果将显示在这里')).toBeVisible();
+    await expect(
+      page.getByText(/执行 SQL 或自然语言查询后，结果将显示在这里/)
+    ).toBeVisible();
   });
 
   test('should have MotherDuck-style color scheme', async ({ page }) => {
-    // Check header background color
-    const header = page.locator('.app-header');
-    await expect(header).toHaveCSS('background-color', 'rgb(26, 27, 58)'); // #1A1B3A
+    const eyebrow = page.locator('.app-eyebrow');
+    await expect(eyebrow).toBeVisible();
+    await expect(eyebrow).toHaveCSS('background-color', 'rgb(255, 222, 0)');
 
-    // Check execute button has gradient
+    const header = page.locator('.app-header');
+    await expect(header).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+
     const executeBtn = page.locator('button:has-text("执行查询")').first();
     await expect(executeBtn).toBeVisible();
+    await expect(executeBtn).toHaveCSS('background-color', 'rgb(111, 194, 255)');
   });
 
   test('should show SQL input placeholder', async ({ page }) => {

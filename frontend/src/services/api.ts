@@ -12,9 +12,57 @@ import type {
   QueryRequest,
   QueryResult,
   NaturalQueryRequest,
+  NaturalGenerateResult,
 } from '../types';
 
 const API_BASE_URL = '/api/v1';
+
+function formatFastApiDetail(detail: unknown): string {
+  if (detail == null) {
+    return '';
+  }
+  if (typeof detail === 'string') {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item: { msg?: string; loc?: unknown[] }) => {
+        if (item && typeof item === 'object' && 'msg' in item) {
+          return String(item.msg);
+        }
+        return JSON.stringify(item);
+      })
+      .join('；');
+  }
+  if (typeof detail === 'object' && detail !== null && 'message' in detail) {
+    return String((detail as { message: unknown }).message);
+  }
+  return JSON.stringify(detail);
+}
+
+/** 将 HTTP 错误体 `{ detail }` 转为带 code/message 的 ApiResponse，便于界面展示 */
+async function readApiResponse<T>(response: Response): Promise<ApiResponse<T>> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return {
+      code: response.status,
+      message: response.statusText || '请求失败',
+      data: null,
+    };
+  }
+  if (!response.ok) {
+    const b = body as { detail?: unknown; message?: string };
+    const msg = formatFastApiDetail(b.detail) || b.message || response.statusText || '请求失败';
+    return {
+      code: response.status,
+      message: msg,
+      data: null,
+    };
+  }
+  return body as ApiResponse<T>;
+}
 
 // =============================================================================
 // Connection Management
@@ -96,9 +144,22 @@ export async function executeQuery(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
-  return response.json();
+  return readApiResponse<QueryResult>(response);
 }
 
+/** 仅生成 SQL，不执行（用户需在左侧点「执行查询」） */
+export async function generateNaturalSql(
+  request: NaturalQueryRequest
+): Promise<ApiResponse<NaturalGenerateResult>> {
+  const response = await fetch(`${API_BASE_URL}/query/natural/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return readApiResponse<NaturalGenerateResult>(response);
+}
+
+/** 生成并立即执行（兼容旧客户端） */
 export async function executeNaturalQuery(
   request: NaturalQueryRequest
 ): Promise<ApiResponse<QueryResult>> {
@@ -107,7 +168,7 @@ export async function executeNaturalQuery(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
-  return response.json();
+  return readApiResponse<QueryResult>(response);
 }
 
 // =============================================================================

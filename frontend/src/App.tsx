@@ -32,14 +32,13 @@ function App() {
   const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  /** 自然语言返回的 SQL 注入左侧编辑器（id 递增触发同步） */
+  const [aiSqlInjection, setAiSqlInjection] = useState<{ id: number; sql: string } | null>(null);
 
-  // Fetch all connections on mount
   useEffect(() => {
     fetchConnections();
   }, []);
 
-  // When connection changes, fetch databases
   useEffect(() => {
     if (selectedConnection) {
       fetchDatabases(selectedConnection.id);
@@ -49,7 +48,6 @@ function App() {
     }
   }, [selectedConnection]);
 
-  // When database changes, fetch tables
   useEffect(() => {
     if (selectedConnection && selectedDatabase) {
       fetchTables(selectedConnection.id, selectedDatabase);
@@ -64,40 +62,33 @@ function App() {
       if (response.code === 200) {
         setConnections(response.data?.connections || []);
       }
-    } catch (error) {
+    } catch {
       message.error('获取连接列表失败');
     }
   };
 
   const fetchDatabases = async (connectionId: number) => {
     try {
-      setLoading(true);
       const response = await getConnectionDatabases(connectionId);
       if (response.code === 200) {
         setDatabases(response.data?.databases || []);
-        // Auto-select first database if none selected
         if (response.data?.databases?.length && !selectedDatabase) {
           setSelectedDatabase(response.data.databases[0].name);
         }
       }
-    } catch (error) {
+    } catch {
       message.error('获取数据库列表失败');
-    } finally {
-      setLoading(false);
     }
   };
 
   const fetchTables = async (connectionId: number, database: string) => {
     try {
-      setLoading(true);
       const response = await getDatabaseTables(connectionId, database);
       if (response.code === 200) {
         setTables(response.data?.tables || []);
       }
-    } catch (error) {
+    } catch {
       message.error('获取表结构失败');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -106,11 +97,13 @@ function App() {
     setSelectedDatabase(null);
     setTables([]);
     setQueryResult(null);
+    setAiSqlInjection(null);
   }, []);
 
   const handleDatabaseSelect = useCallback((database: string | null) => {
     setSelectedDatabase(database);
     setQueryResult(null);
+    setAiSqlInjection(null);
   }, []);
 
   const handleConnectionAdded = useCallback(async (connection: Connection) => {
@@ -134,12 +127,22 @@ function App() {
   }, [selectedConnection]);
 
   const handleTableSelect = useCallback((tableName: string) => {
-    // Could implement inserting table name into query
     console.log('Table selected:', tableName);
   }, []);
 
   const handleQueryResult = useCallback((result: QueryResult) => {
     setQueryResult(result);
+  }, []);
+
+  const handleNaturalSqlGenerated = useCallback((sql: string) => {
+    const trimmed = sql.trim();
+    if (!trimmed) {
+      return;
+    }
+    setAiSqlInjection((prev) => ({
+      id: (prev?.id ?? 0) + 1,
+      sql: trimmed,
+    }));
   }, []);
 
   const existingConnectionNames = connections.map((c) => c.name);
@@ -150,50 +153,84 @@ function App() {
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#6B46C1',
-          borderRadius: 10,
-          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          colorPrimary: '#6fc2ff',
+          colorInfo: '#2ba5ff',
+          colorSuccess: '#383838',
+          colorWarning: '#ffde00',
+          colorError: '#c53030',
+          colorBgBase: '#f4efea',
+          colorBgContainer: '#ffffff',
+          colorBorder: '#000000',
+          colorText: '#383838',
+          colorTextSecondary: '#a1a1a1',
+          borderRadius: 2,
+          wireframe: false,
+          fontFamily:
+            "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          fontSize: 15,
+          controlHeight: 40,
+        },
+        components: {
+          Button: {
+            primaryShadow: 'none',
+            fontWeight: 700,
+          },
+          Card: {
+            headerBg: '#ebf9ff',
+            colorBorderSecondary: '#000000',
+          },
+          Layout: {
+            headerBg: '#ffffff',
+            bodyBg: '#f4efea',
+            siderBg: '#ffffff',
+          },
         },
       }}
     >
-      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+      <Layout className="app-layout-root" style={{ height: '100vh', overflow: 'hidden' }}>
+        <header className="app-eyebrow" role="banner">
+          <span className="app-eyebrow__label">SELECT * FROM CLARITY</span>
+          <p className="app-eyebrow__sub">
+            多库连接、受控 SELECT 与自然语言查询，结构化得像仪表盘一样顺手。
+          </p>
+          <a className="app-eyebrow__cta" href="#main-workspace">
+            开始查询
+          </a>
+        </header>
+
         <Header className="app-header">
           <div className="app-header__logo">
-            <div className="app-header__logo-icon">
-              <ThunderboltOutlined style={{ color: 'white' }} />
+            <div className="app-header__logo-icon" aria-hidden>
+              <ThunderboltOutlined />
             </div>
-            <span style={{ color: 'white', fontSize: 18, fontWeight: 600 }}>
-              AI 数据库查询
-            </span>
+            <span className="app-header__title">AI 数据库查询</span>
           </div>
           {selectedConnection && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div className="app-header__meta">
               <span className="status-badge">
-                连接: {selectedConnection.name} ({selectedConnection.host})
+                连接 · {selectedConnection.name}
               </span>
               {selectedDatabase && (
                 <span className="status-badge status-badge--success">
-                  数据库: {selectedDatabase}
+                  库 · {selectedDatabase}
                 </span>
               )}
             </div>
           )}
         </Header>
 
-        <Layout style={{ flex: 1 }}>
+        <Layout className="app-main-row" style={{ flex: 1, overflow: 'hidden' }}>
           <Sider
             width={320}
             className="app-sidebar"
             style={{
-              background: '#1A1B3A',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
             }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              {/* Connection Selector */}
-              <div className="app-sidebar__section" style={{ padding: 16 }}>
+              <div className="app-sidebar__section">
                 <ConnectionSelector
                   connections={connections}
                   selectedConnection={selectedConnection}
@@ -203,10 +240,9 @@ function App() {
 
               <div className="app-sidebar__divider" />
 
-              {/* Database List */}
               {selectedConnection && (
-                <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ padding: '12px 16px 8px' }}>
+                <div className="app-sidebar__scroll">
+                  <div style={{ padding: 'var(--space-3) var(--space-4) var(--space-2)' }}>
                     <DatabaseList
                       databases={databases.map((d) => ({ name: d.name }))}
                       selectedDb={selectedDatabase}
@@ -214,8 +250,7 @@ function App() {
                     />
                   </div>
 
-                  {/* Table Tree */}
-                  <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
+                  <div className="app-sidebar__scroll-inner">
                     <DatabaseTree
                       databaseName={selectedDatabase}
                       tables={tables}
@@ -227,8 +262,7 @@ function App() {
 
               <div className="app-sidebar__divider" />
 
-              {/* Add Connection Form */}
-              <div style={{ padding: 16 }}>
+              <div className="app-sidebar__section">
                 <AddConnectionForm
                   onSuccess={handleConnectionAdded}
                   existingNames={existingConnectionNames}
@@ -238,13 +272,18 @@ function App() {
             </div>
           </Sider>
 
-          <Content className="app-content" style={{ overflow: 'auto', padding: 16 }}>
-            <Row gutter={[16, 16]}>
+          <Content
+            id="main-workspace"
+            className="app-content"
+            style={{ overflow: 'auto' }}
+          >
+            <Row gutter={[24, 24]}>
               <Col xs={24} lg={12}>
                 <SqlQuery
                   connectionId={selectedConnection?.id}
                   databaseName={selectedDatabase}
                   onResult={handleQueryResult}
+                  aiSqlInjection={aiSqlInjection}
                 />
               </Col>
 
@@ -252,7 +291,7 @@ function App() {
                 <NaturalQuery
                   connectionId={selectedConnection?.id}
                   databaseName={selectedDatabase}
-                  onResult={handleQueryResult}
+                  onGeneratedSql={handleNaturalSqlGenerated}
                 />
               </Col>
 

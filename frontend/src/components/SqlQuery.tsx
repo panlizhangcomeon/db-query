@@ -4,7 +4,7 @@
  */
 import { Input, Button, Card, Typography, Space, Spin, Alert } from 'antd';
 import { PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { executeQuery } from '../services/api';
 import type { QueryResult } from '../types';
 
@@ -15,12 +15,30 @@ interface SqlQueryProps {
   connectionId: number | undefined;
   databaseName: string | null;
   onResult: (result: QueryResult) => void;
+  /** 自然语言生成后写入编辑区；id 变化时覆盖当前 SQL */
+  aiSqlInjection?: { id: number; sql: string } | null;
 }
 
-export function SqlQuery({ connectionId, databaseName, onResult }: SqlQueryProps) {
+export function SqlQuery({ connectionId, databaseName, onResult, aiSqlInjection }: SqlQueryProps) {
   const [sql, setSql] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [fromAi, setFromAi] = useState(false);
+
+  useEffect(() => {
+    setSql('');
+    setFromAi(false);
+    setError(null);
+  }, [connectionId, databaseName]);
+
+  useEffect(() => {
+    if (!aiSqlInjection?.sql) {
+      return;
+    }
+    setSql(aiSqlInjection.sql);
+    setFromAi(true);
+    setError(null);
+  }, [aiSqlInjection]);
 
   const handleExecute = async () => {
     if (!connectionId) {
@@ -46,6 +64,7 @@ export function SqlQuery({ connectionId, databaseName, onResult }: SqlQueryProps
       if (response.code === 200) {
         onResult(response.data!);
         setError(null);
+        setFromAi(false);
       } else {
         setError(response.message || '查询失败');
       }
@@ -61,54 +80,51 @@ export function SqlQuery({ connectionId, databaseName, onResult }: SqlQueryProps
       className="md-card"
       title={
         <div className="md-card__title">
-          <PlayCircleOutlined style={{ color: '#6B46C1' }} />
+          <PlayCircleOutlined />
           <span>SQL 查询</span>
         </div>
       }
-      styles={{ body: { padding: 20 } }}
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         {!connectionId && (
+          <Alert type="warning" message="请先在左侧选择一个连接" showIcon />
+        )}
+
+        {fromAi && (
           <Alert
-            type="warning"
-            message="请先在左侧选择一个连接"
+            type="success"
             showIcon
-            style={{ borderRadius: 10 }}
+            message="已填入 AI 生成的 SQL"
+            description="请核对列名、表名是否正确，修改后点击「执行查询」才会向数据库发起查询。"
+            closable
+            onClose={() => setFromAi(false)}
           />
         )}
 
-        <TextArea
-          value={sql}
-          onChange={(e) => setSql(e.target.value)}
-          placeholder="输入 SQL 查询语句，例如: SELECT * FROM database.users LIMIT 100"
-          autoSize={{ minRows: 4, maxRows: 8 }}
-          disabled={!connectionId || loading}
-          className="query-input"
-          style={{
-            minHeight: 120,
-            background: '#1E1E2E',
-            color: '#CDD6F4',
-            borderColor: '#313244',
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 13,
-          }}
-        />
+        <div>
+          <Text className="md-text-slate" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+            SQL 语句
+          </Text>
+          <TextArea
+            value={sql}
+            onChange={(e) => {
+              setSql(e.target.value);
+            }}
+            placeholder="输入 SQL 查询语句，例如: SELECT * FROM users LIMIT 100"
+            autoSize={{ minRows: 5, maxRows: 16 }}
+            disabled={!connectionId || loading}
+            className="query-input"
+          />
+        </div>
 
         <Button
           type="primary"
+          className="md-btn-primary"
           icon={<SendOutlined />}
           onClick={handleExecute}
           loading={loading}
           disabled={!connectionId || !sql.trim()}
           block
-          style={{
-            background: 'linear-gradient(135deg, #6B46C1 0%, #805AD5 100%)',
-            border: 'none',
-            height: 44,
-            fontSize: 15,
-            fontWeight: 500,
-            borderRadius: 10,
-          }}
         >
           执行查询
         </Button>
@@ -116,18 +132,34 @@ export function SqlQuery({ connectionId, databaseName, onResult }: SqlQueryProps
         {error && (
           <Alert
             type="error"
-            message={error}
             showIcon
             closable
             onClose={() => setError(null)}
-            style={{ borderRadius: 10 }}
+            message={error.includes('\n') || error.length > 200 ? 'SQL 执行失败' : error}
+            description={
+              error.includes('\n') || error.length > 200 ? (
+                <pre
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    margin: 0,
+                    fontSize: 12,
+                    fontFamily: 'var(--font-family-mono)',
+                  }}
+                >
+                  {error}
+                </pre>
+              ) : undefined
+            }
           />
         )}
 
         {loading && (
           <div style={{ textAlign: 'center', padding: 20 }}>
             <Spin size="large" />
-            <Text style={{ display: 'block', marginTop: 8, color: '#6B7280' }}>查询执行中...</Text>
+            <Text className="md-text-slate" style={{ display: 'block', marginTop: 8 }}>
+              查询执行中...
+            </Text>
           </div>
         )}
       </Space>

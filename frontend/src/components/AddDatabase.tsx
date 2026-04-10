@@ -3,11 +3,9 @@
  * MotherDuck-style form with dark theme
  */
 import { useState } from 'react';
-import { Form, Input, Button, message, Typography } from 'antd';
-import { PlusOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
+import { Form, Input, Button, message } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import type { AddDatabaseRequest } from '../types';
-
-const { Text } = Typography;
 
 interface AddDatabaseFormProps {
   onSuccess: (name: string) => void;

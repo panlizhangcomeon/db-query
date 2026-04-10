@@ -2,34 +2,53 @@
  * QueryResults Component
  * Display query results with pagination and metadata
  */
-import { Card, Table, Typography, Tag } from 'antd';
+import { useState } from 'react';
+import { Card, Table, Typography, Tag, Modal } from 'antd';
 import { FileTextOutlined, ClockCircleOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import type { QueryResult } from '../types';
 
 const { Text } = Typography;
+
+const COLUMN_WIDTH = 160;
 
 interface QueryResultsProps {
   result: QueryResult | null;
   loading?: boolean;
 }
 
+function formatCellValue(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 export function QueryResults({ result, loading }: QueryResultsProps) {
+  const [cellDetail, setCellDetail] = useState<{ column: string; value: string } | null>(null);
+
   if (!result && !loading) {
     return (
       <Card
         className="md-card"
         title={
           <div className="md-card__title">
-            <FileTextOutlined style={{ color: '#6B46C1' }} />
+            <FileTextOutlined />
             <span>查询结果</span>
           </div>
         }
         styles={{ body: { padding: 40 } }}
       >
         <div className="empty-state">
-          <div className="empty-state__icon">📊</div>
-          <Text className="empty-state__text" style={{ color: '#6B7280' }}>
-            执行 SQL 查询后，结果将显示在这里
+          <div className="empty-state__icon" aria-hidden>
+            📊
+          </div>
+          <Text className="empty-state__text">
+            执行 SQL 或自然语言查询后，结果将显示在这里。
           </Text>
         </div>
       </Card>
@@ -42,37 +61,59 @@ export function QueryResults({ result, loading }: QueryResultsProps) {
         className="md-card"
         title={
           <div className="md-card__title">
-            <FileTextOutlined style={{ color: '#6B46C1' }} />
+            <FileTextOutlined />
             <span>查询结果</span>
           </div>
         }
         styles={{ body: { padding: 40 } }}
       >
-        <div style={{ textAlign: 'center', color: '#6B7280' }}>加载中...</div>
+        <div style={{ textAlign: 'center' }} className="md-text-slate">
+          加载中...
+        </div>
       </Card>
     );
   }
 
-  // Handle both old format (rows as arrays) and new format (rows as objects)
+  /** 各列固定宽度之和，避免使用 max-content 被单格长串撑开整表 */
+  const scrollX = Math.max(result.columns.length * COLUMN_WIDTH, COLUMN_WIDTH * 2);
+
   const columns = result.columns.map((col) => ({
     title: col,
     dataIndex: col,
     key: col,
-    width: 150,
-    ellipsis: true,
+    width: COLUMN_WIDTH,
+    ellipsis: { showTitle: false },
+    render: (value: unknown) => {
+      const text = formatCellValue(value);
+      const display = text.length ? text : '—';
+      return (
+        <div
+          style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            maxWidth: '100%',
+            minWidth: 0,
+          }}
+          onDoubleClick={() => {
+            if (!text.length) return;
+            setCellDetail({ column: col, value: text });
+          }}
+        >
+          {display}
+        </div>
+      );
+    },
   }));
 
-  // Convert rows to object format for table display
   const dataSource = result.rows.map((row, index) => {
     if (Array.isArray(row)) {
-      // Old format: row is an array
       const obj: Record<string, unknown> = { key: index };
       result.columns.forEach((col, i) => {
         obj[col] = row[i];
       });
       return obj;
     }
-    // New format: row is already an object
     return { key: index, ...row };
   });
 
@@ -82,28 +123,15 @@ export function QueryResults({ result, loading }: QueryResultsProps) {
     <Card
       className="md-card fade-in"
       title={
-        <div className="md-card__title">
-          <CheckCircleOutlined style={{ color: '#10B981' }} />
+        <div className="md-card__title" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <CheckCircleOutlined style={{ color: 'var(--md-sky-strong)' }} />
           <span>查询结果</span>
-          <Tag
-            style={{
-              background: 'rgba(16, 185, 129, 0.1)',
-              color: '#059669',
-              border: 'none',
-              borderRadius: 9999,
-              marginLeft: 8,
-            }}
-          >
+          <Tag style={{ background: 'var(--md-sunbeam)', margin: 0 }}>
             {result.rowCount} 行
           </Tag>
           {executionTime !== undefined && executionTime !== null && (
             <Tag
-              style={{
-                background: 'rgba(59, 130, 246, 0.1)',
-                color: '#2563EB',
-                border: 'none',
-                borderRadius: 9999,
-              }}
+              style={{ background: 'var(--md-soft-blue)', margin: 0 }}
               icon={<ClockCircleOutlined />}
             >
               {executionTime < 1000
@@ -116,18 +144,30 @@ export function QueryResults({ result, loading }: QueryResultsProps) {
       styles={{ body: { padding: 0 } }}
     >
       {result.naturalLanguage && (
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E7EB' }}>
-          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
-            自然语言查询:
+        <div
+          style={{
+            padding: 'var(--space-4) var(--space-6)',
+            borderBottom: '2px solid var(--md-graphite)',
+            background: 'var(--md-fog)',
+          }}
+        >
+          <Text
+            className="md-text-slate"
+            style={{ fontSize: 11, display: 'block', marginBottom: 4, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}
+          >
+            自然语言
           </Text>
-          <Text>{result.naturalLanguage}</Text>
+          <Text className="md-text-ink">{result.naturalLanguage}</Text>
         </div>
       )}
 
       {(result.sql || result.generatedSql) && (
-        <div style={{ padding: 16 }}>
-          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-            执行的 SQL:
+        <div style={{ padding: 'var(--space-4) var(--space-6)' }}>
+          <Text
+            className="md-text-slate"
+            style={{ fontSize: 11, display: 'block', marginBottom: 8, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}
+          >
+            执行的 SQL
           </Text>
           <div className="sql-display">{result.sql || result.generatedSql}</div>
         </div>
@@ -138,7 +178,8 @@ export function QueryResults({ result, loading }: QueryResultsProps) {
         columns={columns}
         rowKey="key"
         size="small"
-        scroll={{ x: 'max-content', y: 400 }}
+        tableLayout="fixed"
+        scroll={{ x: scrollX, y: 400 }}
         pagination={{
           pageSize: 100,
           showSizeChanger: true,
@@ -147,6 +188,31 @@ export function QueryResults({ result, loading }: QueryResultsProps) {
         }}
         style={{ borderRadius: 0 }}
       />
+
+      <Modal
+        title={cellDetail?.column ?? ''}
+        open={!!cellDetail}
+        onCancel={() => setCellDetail(null)}
+        footer={null}
+        width={720}
+        destroyOnClose
+      >
+        <Text
+          className="md-text-ink"
+          style={{
+            display: 'block',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            fontFamily: 'var(--font-family-mono, ui-monospace, monospace)',
+            fontSize: 13,
+            lineHeight: 1.5,
+            maxHeight: 'min(60vh, 480px)',
+            overflow: 'auto',
+          }}
+        >
+          {cellDetail?.value ?? ''}
+        </Text>
+      </Modal>
     </Card>
   );
 }

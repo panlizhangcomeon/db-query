@@ -21,19 +21,7 @@ export function ConnectionSelector({
 }: ConnectionSelectorProps) {
   return (
     <div>
-      <Text
-        strong
-        style={{
-          color: '#9CA3AF',
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          display: 'block',
-          marginBottom: 8,
-        }}
-      >
-        选择连接
-      </Text>
+      <span className="md-sidebar-label">选择连接</span>
       <Select
         placeholder="请选择连接..."
         value={selectedConnection?.id}
@@ -42,16 +30,16 @@ export function ConnectionSelector({
           onSelect(conn);
         }}
         style={{ width: '100%' }}
-        suffixIcon={<CloudServerOutlined style={{ color: '#6B46C1' }} />}
+        suffixIcon={<CloudServerOutlined className="md-text-ink" style={{ fontSize: 14 }} />}
         options={connections.map((conn) => ({
           value: conn.id,
           label: (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CloudServerOutlined style={{ color: '#805AD5' }} />
-              <span>{conn.name}</span>
-              <span style={{ color: '#6B7280', fontSize: 12 }}>
+              <CloudServerOutlined style={{ color: 'var(--md-sky-strong)' }} />
+              <span className="md-text-ink">{conn.name}</span>
+              <Text className="md-text-slate" style={{ fontSize: 12 }}>
                 {conn.host}:{conn.port}
-              </span>
+              </Text>
             </div>
           ),
         }))}

@@ -68,13 +68,19 @@ class LLMService:
                     {
                         "role": "system",
                         "content": (
-                            "You are an expert SQL developer. Given a natural language query and a database schema, "
-                            "generate a valid SQL SELECT statement. Only generate SELECT statements - never generate "
-                            "INSERT, UPDATE, DELETE, or any other modifying statements. "
-                            "ALWAYS include the database name as a prefix for all tables using the format: database.table "
-                            "For example: SELECT * FROM mydb.users WHERE ... "
-                            "Always add a LIMIT 100 clause unless the query already has one. "
-                            "Return ONLY the SQL query, no explanations."
+                            "You are an expert SQL developer for MySQL. Given a natural language question (may be in Chinese) "
+                            "and an EXACT database schema listing, output ONE valid SELECT statement only.\n"
+                            "Rules:\n"
+                            "- ONLY SELECT; never INSERT, UPDATE, DELETE, DDL, or multiple statements.\n"
+                            "- Use ONLY column names that appear verbatim in the schema for each table. "
+                            "Do NOT invent or assume common names (e.g. create_time, created_at, update_time, gmt_create) "
+                            "if they are not listed. For 'earliest/latest', 'first submitted', '按时间排序', etc., "
+                            "you MUST pick time/date columns from that table's listed columns (e.g. add_time, submit_time).\n"
+                            "- Prefix every table with database name: `database`.`table` or database.table.\n"
+                            "- If the question implies one specific business table (e.g. 补充协议 / agreement), prefer that table "
+                            "when its columns fit the question; join other tables only when necessary and only using listed columns.\n"
+                            "- Add LIMIT 100 if the query has no LIMIT.\n"
+                            "- Output ONLY the SQL, no markdown, no explanation."
                         )
                     },
                     {
@@ -83,7 +89,7 @@ class LLMService:
                     }
                 ],
                 temperature=0,
-                max_tokens=500,
+                max_tokens=1200,
             )
 
             sql = response.choices[0].message.content.strip()
@@ -124,9 +130,9 @@ class LLMService:
                         col_name = col.get("name", "")
                         col_type = col.get("dataType") or col.get("type", "")
                         col_pk = " (PK)" if col.get("isPrimaryKey") else ""
-                        col_nullable = " NULL" if col.get("isNullable") else ""
-                        col_comment = f" // {col.get('comment')}" if col.get("comment") else ""
-                        schema_lines.append(f"  {col_name}: {col_type}{col_pk}{col_nullable}{col_comment}")
+                        col_nullable = " NULLABLE" if col.get("isNullable") else ""
+                        col_comment = f"  -- {col.get('comment')}" if col.get("comment") else ""
+                        schema_lines.append(f"  {col_name} {col_type}{col_pk}{col_nullable}{col_comment}")
                     elif isinstance(col, str):
                         schema_lines.append(f"  {col}")
             schema_lines.append("")
@@ -135,31 +141,20 @@ class LLMService:
 
     def _build_prompt(self, query: str, schema_context: str, database: str | None = None) -> str:
         """Build the prompt for SQL generation."""
-        db_context = f"\nDefault database: {database}" if database else ""
-        return f"""Database Schema:
+        db_context = f"\nDefault database (use this prefix for tables): {database}" if database else ""
+        return f"""Database Schema (every column below exists; do not use any column name not shown for that table):
 {schema_context}
 {db_context}
 
-Natural Language Query: {query}
+User question: {query}
 
-Generate the SQL SELECT statement with database prefixes:"""
+Reply with the single MySQL SELECT statement:"""
 
     def _clean_sql(self, sql: str) -> str:
-        """Clean SQL by removing semicolons, newlines and ANSI codes."""
-        import re
+        """与 SQLParserService 一致，避免模型/终端夹带 ANSI 或不可见字符。"""
+        from src.services.sql_parser import SQLParserService
 
-        # Remove ANSI color codes
-        sql = re.sub(r'\x1b\[[0-9;]*m', '', sql)
-
-        # Remove markdown code blocks
-        sql = re.sub(r'```[\w]*', '', sql)
-        sql = re.sub(r'```', '', sql)
-
-        # Remove semicolons
-        sql = re.sub(r'\s*;\s*', ' ', sql)
-        sql = sql.rstrip().rstrip(';').rstrip()
-
-        return sql.strip()
+        return SQLParserService._clean_sql(sql)
 
     @staticmethod
     def extract_table_names(sql: str) -> list[str]:

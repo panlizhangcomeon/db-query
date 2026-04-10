@@ -268,15 +268,42 @@ async def execute_query(body: QueryRequest):
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
 
 
-@router.post("/query/natural", response_model=ApiResponse)
-async def execute_natural_query(body: NaturalQueryRequest):
+def _build_llm_table_metadata(table: dict, database_name: str, max_columns: int | None) -> dict:
     """
-    POST /api/v1/query/natural
-    Generate SQL from natural language and execute it.
+    Normalize table dict from ConnectionService for LLM context.
+    Includes ALL columns by default so the model does not invent names (e.g. create_time vs add_time).
     """
-    from src.database.sqlite_db import ConnectionRepository, DiscoveredDatabaseRepository, TableMetadataRepository, ColumnMetadataRepository, QueryHistoryRepository
-    from src.database.mysql_pool import MySQLPoolManager
+    raw_cols = table.get("columns") or []
+    if max_columns is not None and max_columns > 0:
+        raw_cols = raw_cols[:max_columns]
+    simplified_columns = []
+    for col in raw_cols:
+        comment = (col.get("comment") or "").strip()
+        simplified_columns.append({
+            "name": col.get("name", ""),
+            "dataType": col.get("dataType") or col.get("type", ""),
+            "isPrimaryKey": bool(col.get("isPrimaryKey")),
+            "isNullable": bool(col.get("isNullable")),
+            "comment": comment[:200] if comment else "",
+        })
+    return {
+        "name": table["name"],
+        "type": table.get("type", "table"),
+        "database": database_name,
+        "columns": simplified_columns,
+    }
+
+
+async def _generate_sql_for_natural_query(body: NaturalQueryRequest) -> str:
+    """
+    Build schema context, call LLM, validate SELECT-only, append LIMIT.
+    Does not touch MySQL. Raises ValueError, RuntimeError; caller maps to HTTP.
+    """
+    import os
+
+    from src.database.sqlite_db import ConnectionRepository
     from src.services.connection_service import ConnectionService
+    from src.services.llm_service import LLMService
     from src.services.sql_parser import SQLParserService
 
     if not body.connectionId:
@@ -288,51 +315,77 @@ async def execute_natural_query(body: NaturalQueryRequest):
     if not connection:
         raise HTTPException(status_code=404, detail=f"Connection {body.connectionId} not found")
 
+    max_cols_env = os.environ.get("LLM_SCHEMA_MAX_COLUMNS", "").strip()
+    max_columns: int | None = int(max_cols_env) if max_cols_env.isdigit() else None
+
+    target_database = body.database
+    if target_database:
+        databases = [{"name": target_database}]
+    else:
+        all_dbs = await ConnectionService.get_connection_databases(body.connectionId)
+        databases = all_dbs[:3]
+
+    all_metadata: list[dict] = []
+    for db in databases:
+        tables = await ConnectionService.get_database_tables(body.connectionId, db["name"])
+        for table in tables:
+            all_metadata.append(_build_llm_table_metadata(table, db["name"], max_columns))
+
+    llm_service = LLMService(all_metadata)
+    generated_sql = llm_service.generate_sql(body.naturalLanguage, database=body.database)
+    SQLParserService.validate(generated_sql)
+    return SQLParserService.add_limit(generated_sql)
+
+
+@router.post("/query/natural/generate", response_model=ApiResponse)
+async def generate_sql_from_natural_language(body: NaturalQueryRequest):
+    """
+    POST /api/v1/query/natural/generate
+    仅根据自然语言生成 SQL（校验 SELECT + LIMIT），不执行查询。
+    """
+    from src.services.llm_service import LLMService
+
     try:
-        # Get metadata for LLM context - only for the specified database (or first few if none specified)
-        target_database = body.database
+        sql_to_run = await _generate_sql_for_natural_query(body)
+        return ApiResponse(
+            code=200,
+            message="Success",
+            data={
+                "generatedSql": sql_to_run,
+                "tablesUsed": LLMService.extract_table_names(sql_to_run),
+                "naturalLanguage": body.naturalLanguage,
+            },
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
-        # Get databases to search
-        if target_database:
-            # Only get metadata for the target database
-            databases = [{"name": target_database}]
-        else:
-            # If no database specified, only get first 3 databases to avoid token limit
-            all_dbs = await ConnectionService.get_connection_databases(body.connectionId)
-            databases = all_dbs[:3]
 
-        # Build metadata list for LLM (limit columns to essential info)
-        all_metadata = []
-        for db in databases:
-            tables = await ConnectionService.get_database_tables(body.connectionId, db["name"])
-            for table in tables:
-                # Only include essential column info to reduce tokens
-                simplified_columns = []
-                for col in table.get("columns", [])[:10]:  # Limit to 10 columns per table
-                    simplified_columns.append({
-                        "name": col.get("name", ""),
-                        "type": col.get("dataType", ""),
-                        "comment": col.get("comment", "")[:50] if col.get("comment") else ""  # Truncate comment
-                    })
-                all_metadata.append({
-                    "name": table["name"],
-                    "type": table["type"],
-                    "database": db["name"],
-                    "columns": simplified_columns
-                })
+@router.post("/query/natural", response_model=ApiResponse)
+async def execute_natural_query(body: NaturalQueryRequest):
+    """
+    POST /api/v1/query/natural
+    Generate SQL from natural language and execute it (兼容旧调用；前端请用 /query/natural/generate + /query)。
+    """
+    from src.database.sqlite_db import ConnectionRepository, QueryHistoryRepository
+    from src.database.mysql_pool import MySQLPoolManager
+    from src.services.connection_service import ConnectionService
+    from src.services.llm_service import LLMService
 
-        # Generate SQL using LLM
-        from src.services.llm_service import LLMService
-        llm_service = LLMService(all_metadata)
-        sql = llm_service.generate_sql(body.naturalLanguage, database=body.database)
+    generated_sql: str | None = None
+    sql_to_run: str | None = None
 
-        # Validate the generated SQL
-        SQLParserService.validate(sql)
+    try:
+        sql_to_run = await _generate_sql_for_natural_query(body)
+        generated_sql = sql_to_run
 
-        # Add LIMIT if not present
-        sql = SQLParserService.add_limit(sql)
+        connection = ConnectionRepository.get_by_id(body.connectionId)
+        if not connection:
+            raise HTTPException(status_code=404, detail=f"Connection {body.connectionId} not found")
 
-        # Get credentials and execute
         host, port, username, password = ConnectionService.get_connection_credentials(connection)
 
         import time
@@ -344,16 +397,15 @@ async def execute_natural_query(body: NaturalQueryRequest):
             port=port,
             username=username,
             password=password,
-            sql=sql,
+            sql=sql_to_run,
             database=body.database
         )
 
         execution_time = (time.time() - start_time) * 1000
 
-        # Save to query history
         QueryHistoryRepository.create(
             connection_id=body.connectionId,
-            sql_text=sql,
+            sql_text=sql_to_run,
             execution_time_ms=execution_time,
             row_count=result["rowCount"]
         )
@@ -362,8 +414,8 @@ async def execute_natural_query(body: NaturalQueryRequest):
             code=200,
             message="Success",
             data={
-                "generatedSql": sql,
-                "tablesUsed": LLMService.extract_table_names(sql),
+                "generatedSql": sql_to_run,
+                "tablesUsed": LLMService.extract_table_names(sql_to_run),
                 "columns": result["columns"],
                 "rows": result["rows"],
                 "rowCount": result["rowCount"],
@@ -372,7 +424,24 @@ async def execute_natural_query(body: NaturalQueryRequest):
             }
         )
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Natural query failed: {str(e)}")
+        import pymysql.err
+
+        err = str(e)
+        sql_for_user = sql_to_run or generated_sql
+        if sql_for_user:
+            detail = (
+                f"{err}\n\n本次生成的 SQL（便于排查列名/表名是否与库中一致）:\n{sql_for_user}"
+            )
+        else:
+            detail = err
+
+        if isinstance(e, pymysql.err.Error):
+            raise HTTPException(status_code=400, detail=detail)
+        raise HTTPException(status_code=500, detail=detail)

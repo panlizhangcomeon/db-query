@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { Card, Table, Tag, Typography, Space, Button } from 'antd';
 import { TableOutlined, EyeOutlined, DownOutlined, RightOutlined } from '@ant-design/icons';
-import type { TableMetadata, ColumnInfo } from '../types';
+import type { TableMetadata, Column } from '../types';
 
 const { Text } = Typography;
 
@@ -27,7 +27,7 @@ export function TableViewer({ databaseName, metadata }: TableViewerProps) {
       dataIndex: 'name',
       key: 'name',
       width: 150,
-      render: (name: string, record: ColumnInfo) => (
+      render: (name: string, record: Column) => (
         <Space>
           <Text strong>{name}</Text>
           {record.isPrimaryKey && (
@@ -40,23 +40,23 @@ export function TableViewer({ databaseName, metadata }: TableViewerProps) {
     },
     {
       title: '类型',
-      dataIndex: 'type',
-      key: 'type',
+      dataIndex: 'dataType',
+      key: 'dataType',
       width: 200,
-      render: (type: string) => (
-        <Text style={{ wordBreak: 'break-all', fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>
-          {type}
+      render: (dataType: string) => (
+        <Text style={{ wordBreak: 'break-all', fontSize: 12, fontFamily: 'var(--font-family-mono)' }}>
+          {dataType}
         </Text>
       ),
     },
     {
       title: 'Nullable',
-      dataIndex: 'nullable',
-      key: 'nullable',
+      dataIndex: 'isNullable',
+      key: 'isNullable',
       width: 80,
-      render: (nullable: boolean) => (
-        <Text type={nullable ? 'success' : 'secondary'} style={{ fontSize: 12 }}>
-          {nullable ? 'YES' : 'NO'}
+      render: (isNullable: boolean) => (
+        <Text type={isNullable ? 'success' : 'secondary'} style={{ fontSize: 12 }}>
+          {isNullable ? 'YES' : 'NO'}
         </Text>
       ),
     },

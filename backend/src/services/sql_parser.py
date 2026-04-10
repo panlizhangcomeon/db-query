@@ -3,10 +3,14 @@ SQL Parser Service
 
 Handles SQL parsing and validation using sqlglot.
 """
+import re
 from typing import Any
 
 import sqlglot
 from sqlglot import exp
+
+# 与执行端 MySQL 一致；反引号标识符必须用 mysql 方言解析
+_SQL_DIALECT = "mysql"
 
 
 class SQLParserService:
@@ -29,8 +33,10 @@ class SQLParserService:
         if not sql or not sql.strip():
             raise ValueError("SQL statement cannot be empty")
 
+        cleaned = SQLParserService._clean_sql(sql)
+
         try:
-            parsed = sqlglot.parse_one(sql)
+            parsed = sqlglot.parse_one(cleaned, dialect=_SQL_DIALECT)
         except Exception as e:
             raise ValueError(f"SQL syntax error: {e}")
 
@@ -59,7 +65,7 @@ class SQLParserService:
         cleaned_sql = SQLParserService._clean_sql(sql)
 
         # Parse the cleaned SQL
-        parsed = sqlglot.parse_one(cleaned_sql)
+        parsed = sqlglot.parse_one(cleaned_sql, dialect=_SQL_DIALECT)
 
         # Check if already has LIMIT
         if parsed.find(exp.Limit):
@@ -69,12 +75,12 @@ class SQLParserService:
         limit_clause = exp.Limit(expression=exp.Literal.number(limit))
         parsed.set("limit", limit_clause)
 
-        return parsed.sql()
+        return parsed.sql(dialect=_SQL_DIALECT)
 
     @staticmethod
     def _clean_sql(sql: str) -> str:
         """
-        Clean SQL by removing semicolons, newlines, and ANSI codes.
+        Clean SQL by removing semicolons, newlines, ANSI codes, and invisible chars.
 
         Args:
             sql: Raw SQL string
@@ -82,20 +88,25 @@ class SQLParserService:
         Returns:
             Cleaned SQL string
         """
-        import re
+        # BOM、零宽字符（部分模型或终端会夹带）
+        sql = sql.replace("\ufeff", "")
+        sql = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", sql)
 
-        # Remove ANSI color codes like [4m, [0m, etc.
-        sql = re.sub(r'\x1b\[[0-9;]*m', '', sql)
+        # ESC 序列（含着色/下划线），以及偶发的裸 CSI 片段
+        sql = re.sub(r"\x1b\[[0-9;]*[mK]", "", sql)
+        sql = re.sub(r"\x1b\][^\x07]*\x07", "", sql)  # OSC
+        # 粘贴时 ESC 丢失时残留的常见 SGR（如 [4m 下划线、[0m 重置）
+        sql = re.sub(r"\[[0-9]{1,2}m", "", sql)
 
         # Remove markdown code blocks
-        sql = re.sub(r'```[\w]*', '', sql)
-        sql = re.sub(r'```', '', sql)
+        sql = re.sub(r"```[\w]*", "", sql)
+        sql = re.sub(r"```", "", sql)
 
         # Remove semicolons and whitespace around them
-        sql = re.sub(r'\s*;\s*', ' ', sql)
+        sql = re.sub(r"\s*;\s*", " ", sql)
 
         # Remove trailing semicolon
-        sql = sql.rstrip().rstrip(';').rstrip()
+        sql = sql.rstrip().rstrip(";").rstrip()
 
         # Remove any leading/trailing newlines
         sql = sql.strip()

@@ -1,13 +1,10 @@
 /**
  * DatabaseList Component
- * MotherDuck-style database list with dark theme
- * Note: Databases are discovered from the MySQL server, not manually managed
+ * Databases discovered from the MySQL server
  */
 import { useState } from 'react';
-import { Typography, Button } from 'antd';
+import { Button } from 'antd';
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
-
-const { Text } = Typography;
 
 interface DatabaseListProps {
   databases: { name: string }[];
@@ -21,29 +18,31 @@ export function DatabaseList({ databases, selectedDb, onSelect }: DatabaseListPr
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <Text strong style={{ color: '#9CA3AF', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        <span className="md-sidebar-label" style={{ marginBottom: 0 }}>
           数据库列表 ({databases.length})
-        </Text>
+        </span>
         <Button
           type="text"
           size="small"
           onClick={() => setOpen(!open)}
-          style={{ color: '#6B7280' }}
+          className="md-text-slate"
           icon={open ? <DownOutlined /> : <RightOutlined />}
         />
       </div>
 
       {open && (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          maxHeight: 200,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            maxHeight: 200,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}
+        >
           {databases.length === 0 ? (
-            <div style={{ color: '#6B7280', fontSize: 13, textAlign: 'center', padding: 16 }}>
+            <div className="md-text-slate" style={{ fontSize: 13, textAlign: 'center', padding: 16 }}>
               暂无数据库
             </div>
           ) : (
@@ -51,11 +50,22 @@ export function DatabaseList({ databases, selectedDb, onSelect }: DatabaseListPr
               <div
                 key={db.name}
                 onClick={() => onSelect(db.name)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(db.name);
+                  }
+                }}
                 className={`db-card ${selectedDb === db.name ? 'db-card--active' : ''}`}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                    <div className="db-card__name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div
+                      className="db-card__name"
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
                       {db.name}
                     </div>
                   </div>
